@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -26,7 +27,7 @@ var DuckDuckGo = EngineConfig{
 // ddgBuildRequest constructs the HTTP POST request for DuckDuckGo HTML search.
 // Ported from Duckduckgo.build_payload() in the reference implementation.
 func ddgBuildRequest(query string, opts SearchOpts) (*http.Request, error) {
-	form := fmt.Sprintf("q=%s", query)
+	form := url.Values{"q": {query}}.Encode()
 
 	req, err := http.NewRequest(http.MethodPost, "https://html.duckduckgo.com/html/", strings.NewReader(form))
 	if err != nil {

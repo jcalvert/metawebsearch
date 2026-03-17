@@ -72,6 +72,10 @@ func TestMultiSearchDeduplicatesByURL(t *testing.T) {
 	if len(sr.Results) != 1 {
 		t.Errorf("got %d results, want 1 (dedup)", len(sr.Results))
 	}
+	// First engine wins
+	if sr.Results[0].Title != "From 1" {
+		t.Errorf("Title = %q, want 'From 1' (first engine wins)", sr.Results[0].Title)
+	}
 }
 
 func TestMultiSearchPartialFailure(t *testing.T) {
