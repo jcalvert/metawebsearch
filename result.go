@@ -19,6 +19,7 @@ type SearchOpts struct {
 	MaxResults int
 	Region     string // e.g. "us-en"
 	SafeSearch string // "on", "moderate", "off"
+	TimeLimit  string // "d" (day), "w" (week), "m" (month), "y" (year)
 }
 
 // SearchResult is what MultiSearch returns.
