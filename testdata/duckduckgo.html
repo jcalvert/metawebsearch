@@ -1,0 +1,23 @@
+<!-- testdata/duckduckgo.html -->
+<html><body>
+<div class="results">
+  <div class="web-result">
+    <div class="body">
+      <h2><a href="https://example.com">DDG Result One</a></h2>
+      <a href="https://example.com" class="result__snippet">First snippet text here.</a>
+    </div>
+  </div>
+  <div class="web-result">
+    <div class="body">
+      <h2><a href="https://duckduckgo.com/y.js?tracking=yes">Tracking Link</a></h2>
+      <a href="https://duckduckgo.com/y.js?tracking=yes" class="result__snippet">Should be filtered.</a>
+    </div>
+  </div>
+  <div class="web-result">
+    <div class="body">
+      <h2><a href="//duckduckgo.com/l/?uddg=https%3A%2F%2Freal.com&amp;rut=abc">DDG Result Two</a></h2>
+      <a href="//duckduckgo.com/l/?uddg=https%3A%2F%2Freal.com" class="result__snippet">Second snippet.</a>
+    </div>
+  </div>
+</div>
+</body></html>
