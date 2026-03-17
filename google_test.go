@@ -10,6 +10,7 @@ import (
 )
 
 func TestGoogleParseResponse(t *testing.T) {
+	resetRateLimit("google")
 	data, err := os.ReadFile("testdata/google.html")
 	if err != nil {
 		t.Fatalf("read fixture: %v", err)
@@ -37,6 +38,7 @@ func TestGoogleParseResponse(t *testing.T) {
 }
 
 func TestGoogleRedirectUnwrapping(t *testing.T) {
+	resetRateLimit("google")
 	html := `<html><body>
 		<div data-snc="1">
 			<div role="link">Title</div>
@@ -59,6 +61,7 @@ func TestGoogleRedirectUnwrapping(t *testing.T) {
 }
 
 func TestGoogleFiltersNonHTTPAndEmptyTitle(t *testing.T) {
+	resetRateLimit("google")
 	html := `<html><body>
 		<div data-snc="1">
 			<div role="link">Valid</div>

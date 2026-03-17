@@ -114,3 +114,10 @@ func recordRequest(name string) {
 	lastReqs[name] = time.Now()
 	rateMu.Unlock()
 }
+
+// resetRateLimit clears rate limit state for an engine. Exported for testing.
+func resetRateLimit(name string) {
+	rateMu.Lock()
+	delete(lastReqs, name)
+	rateMu.Unlock()
+}
