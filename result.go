@@ -17,6 +17,7 @@ type Result struct {
 // SearchOpts controls a search request.
 type SearchOpts struct {
 	MaxResults int
+	Page       int    // 1-based page number (default: 1)
 	Region     string // e.g. "us-en"
 	SafeSearch string // "on", "moderate", "off"
 	TimeLimit  string // "d" (day), "w" (week), "m" (month), "y" (year)
