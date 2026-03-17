@@ -1,0 +1,15 @@
+# Binaries
+*.exe
+*.test
+*.out
+
+# Reference implementation (read-only, not part of this project)
+reference/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
