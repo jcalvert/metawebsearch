@@ -4,7 +4,6 @@ package metawebsearch
 // AllEngines returns every built-in engine.
 func AllEngines() []EngineConfig {
 	return []EngineConfig{
-		Google,
 		DuckDuckGo,
 		Brave,
 		Mojeek,
