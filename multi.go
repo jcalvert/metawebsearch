@@ -3,7 +3,9 @@ package metawebsearch
 
 import (
 	"context"
+	"fmt"
 	"sort"
+	"strings"
 	"sync"
 )
 
@@ -35,9 +37,16 @@ func (m *MultiSearch) Search(ctx context.Context, query string, opts SearchOpts)
 			// Use per-engine client if the engine needs a specific TLS profile
 			client := m.Client
 			if eng.ClientProfile != "" {
-				if override, err := NewClient(ClientOpts{BrowserProfile: eng.ClientProfile}); err == nil {
-					client = override
+				override, profileErr := NewClient(ClientOpts{BrowserProfile: eng.ClientProfile})
+				if profileErr != nil {
+					mu.Lock()
+					outputs = append(outputs, engineResult{
+						name: eng.Name, err: fmt.Errorf("client profile %q: %w", eng.ClientProfile, profileErr), order: idx,
+					})
+					mu.Unlock()
+					return
 				}
+				client = override
 			}
 			results, err := Execute(ctx, client, eng, query, opts)
 			mu.Lock()
@@ -69,6 +78,16 @@ func (m *MultiSearch) Search(ctx context.Context, query string, opts SearchOpts)
 				sr.Results = append(sr.Results, r)
 			}
 		}
+	}
+
+	// If every engine failed, return an aggregate error.
+	if len(sr.Results) == 0 && len(sr.Errors) > 0 {
+		names := make([]string, 0, len(sr.Errors))
+		for name := range sr.Errors {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		return sr, fmt.Errorf("all %d engines failed: %s", len(sr.Errors), strings.Join(names, ", "))
 	}
 
 	return sr, nil

@@ -200,7 +200,11 @@ func Execute(ctx context.Context, client HTTPClient, engine EngineConfig, query 
 			results[i].Engine = engine.Name
 		}
 
-		recordRequest(engine.Name)
+		// Enforce MaxResults if set
+		if opts.MaxResults > 0 && len(results) > opts.MaxResults {
+			results = results[:opts.MaxResults]
+		}
+
 		return results, nil
 	}
 
@@ -210,20 +214,22 @@ func Execute(ctx context.Context, client HTTPClient, engine EngineConfig, query 
 func enforceRateLimit(name string, minDelay time.Duration) {
 	rateMu.Lock()
 	last := lastReqs[name]
+	now := time.Now()
+	// Reserve the next slot while holding the lock to prevent concurrent
+	// callers from seeing the same timestamp and firing simultaneously.
+	earliest := last.Add(minDelay)
+	if earliest.Before(now) {
+		earliest = now
+	}
+	lastReqs[name] = earliest
 	rateMu.Unlock()
 
-	if elapsed := time.Since(last); elapsed < minDelay {
-		time.Sleep(minDelay - elapsed)
+	if wait := time.Until(earliest); wait > 0 {
+		time.Sleep(wait)
 	}
 }
 
-func recordRequest(name string) {
-	rateMu.Lock()
-	lastReqs[name] = time.Now()
-	rateMu.Unlock()
-}
-
-// resetRateLimit clears rate limit state for an engine. Exported for testing.
+// resetRateLimit clears rate limit state for an engine. For testing.
 func resetRateLimit(name string) {
 	rateMu.Lock()
 	delete(lastReqs, name)

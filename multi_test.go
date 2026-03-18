@@ -133,8 +133,8 @@ func TestMultiSearchAllFail(t *testing.T) {
 		Engines: []EngineConfig{engine},
 	}
 	sr, err := ms.Search(context.Background(), "test", SearchOpts{})
-	if err != nil {
-		t.Fatalf("Search error: %v (should return empty results, not error)", err)
+	if err == nil {
+		t.Fatal("expected error when all engines fail")
 	}
 	if len(sr.Results) != 0 {
 		t.Errorf("got %d results, want 0", len(sr.Results))
