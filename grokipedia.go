@@ -41,6 +41,8 @@ func grokipediaBuildRequest(query string, opts SearchOpts) (*http.Request, error
 	q.Set("limit", fmt.Sprintf("%d", limit))
 	req.URL.RawQuery = q.Encode()
 
+	req.Header.Set("Accept", "application/json")
+
 	return req, nil
 }
 

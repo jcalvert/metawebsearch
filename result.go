@@ -8,10 +8,10 @@ import (
 
 // Result is a single search result from any engine.
 type Result struct {
-	Title   string
-	URL     string
-	Snippet string
-	Engine  string
+	Title   string `json:"title"`
+	URL     string `json:"url"`
+	Snippet string `json:"snippet"`
+	Engine  string `json:"engine"`
 }
 
 // SearchOpts controls a search request.
@@ -40,6 +40,12 @@ type EngineConfig struct {
 	BuildRequest  func(query string, opts SearchOpts) (*http.Request, error)
 	ParseResponse func(resp *http.Response) ([]Result, error)
 	PostProcess   func(results []Result) []Result
+
+	// ClientProfile overrides the TLS client profile for this engine.
+	// If set, Execute creates a dedicated client with this profile.
+	// This is needed when the engine's User-Agent requires a matching
+	// TLS fingerprint (e.g. Google's GSA UA needs Safari iOS profile).
+	ClientProfile string
 
 	MinDelay        time.Duration
 	MaxRetries      int

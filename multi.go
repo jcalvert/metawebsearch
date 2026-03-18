@@ -32,7 +32,14 @@ func (m *MultiSearch) Search(ctx context.Context, query string, opts SearchOpts)
 		wg.Add(1)
 		go func(eng EngineConfig, idx int) {
 			defer wg.Done()
-			results, err := Execute(ctx, m.Client, eng, query, opts)
+			// Use per-engine client if the engine needs a specific TLS profile
+			client := m.Client
+			if eng.ClientProfile != "" {
+				if override, err := NewClient(ClientOpts{BrowserProfile: eng.ClientProfile}); err == nil {
+					client = override
+				}
+			}
+			results, err := Execute(ctx, client, eng, query, opts)
 			mu.Lock()
 			outputs = append(outputs, engineResult{
 				name: eng.Name, results: results, err: err, order: idx,

@@ -54,6 +54,11 @@ func wikipediaBuildRequest(query string, opts SearchOpts) (*http.Request, error)
 	q.Set("search", query)
 	req.URL.RawQuery = q.Encode()
 
+	// Wikipedia API requires a descriptive User-Agent per their policy:
+	// https://meta.wikimedia.org/wiki/User-Agent_policy
+	req.Header.Set("User-Agent", "metawebsearch/0.1 (https://github.com/jcalvert/metawebsearch)")
+	req.Header.Set("Accept", "application/json")
+
 	return req, nil
 }
 

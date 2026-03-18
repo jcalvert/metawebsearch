@@ -56,6 +56,7 @@ func getGoogleUA() string {
 // Google is the EngineConfig for Google web search.
 var Google = EngineConfig{
 	Name:            "google",
+	ClientProfile:   "safari_ios_26_0",
 	MinDelay:        3 * time.Second,
 	MaxRetries:      3,
 	RetryableStatus: defaultRetryableStatus,
@@ -107,7 +108,9 @@ func googleBuildRequest(query string, opts SearchOpts) (*http.Request, error) {
 
 	req.URL.RawQuery = q.Encode()
 
-	// Set GSA user-agent
+	// GSA (Google Search App) user-agent, matching the reference implementation.
+	// The Google EngineConfig sets ClientProfile to Safari iOS so the TLS
+	// fingerprint matches this mobile UA.
 	req.Header.Set("User-Agent", getGoogleUA())
 
 	return req, nil

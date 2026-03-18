@@ -31,7 +31,6 @@ func NewClient(opts ClientOpts) (HTTPClient, error) {
 	options := []tls_client.HttpClientOption{
 		tls_client.WithClientProfile(profile),
 		tls_client.WithRandomTLSExtensionOrder(),
-		tls_client.WithNotFollowRedirects(),
 	}
 
 	client, err := tls_client.NewHttpClient(tls_client.NewNoopLogger(), options...)

@@ -2,16 +2,116 @@
 package metawebsearch
 
 import (
+	"bytes"
+	"compress/flate"
+	"compress/gzip"
 	"context"
 	"fmt"
+	"io"
+	"net/http"
+	"strings"
 	"sync"
 	"time"
+
+	"github.com/andybalholm/brotli"
 )
 
 // defaultRetryableStatus returns true for status codes that should trigger a retry.
 func defaultRetryableStatus(code int) bool {
 	return code == 202 || code == 429 || code == 503
 }
+
+// defaultBrowserHeaders are the headers a real browser sends on every navigation
+// request. These match what primp/impersonate="random" sends in the reference
+// implementation. Without these, search engines detect us as bots immediately.
+var defaultBrowserHeaders = map[string]string{
+	"Accept":                    "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+	"Accept-Language":           "en-US,en;q=0.9",
+	// Accept-Encoding is deliberately NOT set here. tls-client's fhttp transport
+	// handles it automatically: it sends the right Accept-Encoding as part of the
+	// TLS profile, auto-decompresses the response, and strips the Content-Encoding
+	// header. If we set Accept-Encoding ourselves, fhttp still auto-decompresses
+	// but leaves the Content-Encoding header, which breaks our decompressBody.
+	"Sec-Ch-Ua":                 `"Chromium";v="131", "Not_A Brand";v="24"`,
+	"Sec-Ch-Ua-Mobile":          "?0",
+	"Sec-Ch-Ua-Platform":        `"Windows"`,
+	"Sec-Fetch-Dest":            "document",
+	"Sec-Fetch-Mode":            "navigate",
+	"Sec-Fetch-Site":            "none",
+	"Sec-Fetch-User":            "?1",
+	"Upgrade-Insecure-Requests": "1",
+}
+
+// applyDefaultHeaders sets browser-like headers on the request. Headers already
+// set by the engine's BuildRequest are not overwritten.
+func applyDefaultHeaders(req *http.Request) {
+	for k, v := range defaultBrowserHeaders {
+		if req.Header.Get(k) == "" {
+			req.Header.Set(k, v)
+		}
+	}
+	// Ensure User-Agent is set if engine didn't provide one
+	if req.Header.Get("User-Agent") == "" {
+		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
+	}
+
+	// Sec-Ch-Ua headers are Chrome desktop specific. Remove them if the UA
+	// indicates a non-Chrome client (e.g. GSA mobile, or API clients like
+	// Wikipedia that set their own UA).
+	ua := req.Header.Get("User-Agent")
+	if !strings.Contains(ua, "Chrome/") {
+		req.Header.Del("Sec-Ch-Ua")
+		req.Header.Del("Sec-Ch-Ua-Mobile")
+		req.Header.Del("Sec-Ch-Ua-Platform")
+	}
+}
+
+// decompressBody reads the full response body and decompresses it if needed.
+// tls-client's fhttp transport is inconsistent: it auto-decompresses some
+// responses but not others, and never strips the Content-Encoding header.
+// We handle this by reading the body, attempting decompression if the header
+// says it's compressed, and falling back to the raw bytes if decompression
+// fails (meaning the transport already handled it).
+func decompressBody(resp *http.Response) {
+	ce := strings.ToLower(resp.Header.Get("Content-Encoding"))
+	if ce == "" {
+		return
+	}
+
+	raw, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil || len(raw) == 0 {
+		resp.Body = io.NopCloser(bytes.NewReader(raw))
+		return
+	}
+
+	var decompressed []byte
+	switch ce {
+	case "br":
+		decompressed, err = io.ReadAll(brotli.NewReader(bytes.NewReader(raw)))
+	case "gzip":
+		var gr *gzip.Reader
+		gr, err = gzip.NewReader(bytes.NewReader(raw))
+		if err == nil {
+			decompressed, err = io.ReadAll(gr)
+			gr.Close()
+		}
+	case "deflate":
+		decompressed, err = io.ReadAll(flate.NewReader(bytes.NewReader(raw)))
+	default:
+		resp.Body = io.NopCloser(bytes.NewReader(raw))
+		return
+	}
+
+	if err != nil {
+		// Decompression failed — transport already decompressed it
+		resp.Body = io.NopCloser(bytes.NewReader(raw))
+	} else {
+		resp.Body = io.NopCloser(bytes.NewReader(decompressed))
+	}
+}
+
+const minRetryBackoff = 5 * time.Second
 
 // rateLimiter tracks per-engine last request times.
 var (
@@ -42,7 +142,13 @@ func Execute(ctx context.Context, client HTTPClient, engine EngineConfig, query 
 		enforceRateLimit(engine.Name, minDelay)
 	}
 
+	// Retry backoff: real engines (MinDelay >= 1s) get at least 5s between
+	// retries to avoid anti-bot defenses. Test engines with tiny delays are
+	// not subject to the floor.
 	backoff := minDelay
+	if engine.MinDelay >= time.Second && backoff < minRetryBackoff {
+		backoff = minRetryBackoff
+	}
 	var lastStatus int
 
 	for attempt := range maxRetries + 1 {
@@ -60,6 +166,7 @@ func Execute(ctx context.Context, client HTTPClient, engine EngineConfig, query 
 			return nil, fmt.Errorf("%s: build request: %w", engine.Name, err)
 		}
 		req = req.WithContext(ctx)
+		applyDefaultHeaders(req)
 
 		resp, err := client.Do(req)
 		if err != nil {
@@ -77,6 +184,7 @@ func Execute(ctx context.Context, client HTTPClient, engine EngineConfig, query 
 			return nil, fmt.Errorf("%s: HTTP %d", engine.Name, resp.StatusCode)
 		}
 
+		decompressBody(resp)
 		results, err := engine.ParseResponse(resp)
 		resp.Body.Close()
 		if err != nil {
