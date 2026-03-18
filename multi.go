@@ -4,10 +4,32 @@ package metawebsearch
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"sort"
 	"strings"
 	"sync"
 )
+
+// normalizeURL lowercases scheme and host, strips trailing slashes, default
+// ports, and fragments so that equivalent URLs dedup correctly.
+func normalizeURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return strings.ToLower(raw)
+	}
+	u.Scheme = strings.ToLower(u.Scheme)
+	u.Host = strings.ToLower(u.Host)
+	u.Fragment = ""
+	// Strip default ports
+	if (u.Scheme == "https" && u.Port() == "443") || (u.Scheme == "http" && u.Port() == "80") {
+		u.Host = u.Hostname()
+	}
+	// Strip trailing slash from path (but keep "/" for root)
+	if len(u.Path) > 1 {
+		u.Path = strings.TrimRight(u.Path, "/")
+	}
+	return u.String()
+}
 
 // MultiSearch dispatches a query to multiple engines concurrently.
 type MultiSearch struct {
@@ -63,7 +85,7 @@ func (m *MultiSearch) Search(ctx context.Context, query string, opts SearchOpts)
 		return outputs[i].order < outputs[j].order
 	})
 
-	// Deduplicate by URL, collect errors
+	// Deduplicate by normalized URL, collect errors
 	seen := make(map[string]bool)
 	sr := &SearchResult{Errors: make(map[string]error)}
 
@@ -73,8 +95,9 @@ func (m *MultiSearch) Search(ctx context.Context, query string, opts SearchOpts)
 			continue
 		}
 		for _, r := range o.results {
-			if !seen[r.URL] {
-				seen[r.URL] = true
+			key := normalizeURL(r.URL)
+			if !seen[key] {
+				seen[key] = true
 				sr.Results = append(sr.Results, r)
 			}
 		}

@@ -78,6 +78,39 @@ func TestMultiSearchDeduplicatesByURL(t *testing.T) {
 	}
 }
 
+func TestMultiSearchDeduplicatesNormalized(t *testing.T) {
+	engine1 := EngineConfig{
+		Name: "engine1",
+		BuildRequest: func(q string, o SearchOpts) (*http.Request, error) {
+			return http.NewRequest("GET", "https://example.com?q="+q, nil)
+		},
+		ParseResponse: func(resp *http.Response) ([]Result, error) {
+			return []Result{{Title: "From 1", URL: "https://example.com/page/"}}, nil
+		},
+	}
+	engine2 := EngineConfig{
+		Name: "engine2",
+		BuildRequest: func(q string, o SearchOpts) (*http.Request, error) {
+			return http.NewRequest("GET", "https://example.com?q="+q, nil)
+		},
+		ParseResponse: func(resp *http.Response) ([]Result, error) {
+			return []Result{{Title: "From 2", URL: "https://Example.COM/page#section"}}, nil
+		},
+	}
+
+	ms := MultiSearch{
+		Client:  newFakeClient(200, ""),
+		Engines: []EngineConfig{engine1, engine2},
+	}
+	sr, err := ms.Search(context.Background(), "test", SearchOpts{})
+	if err != nil {
+		t.Fatalf("Search error: %v", err)
+	}
+	if len(sr.Results) != 1 {
+		t.Errorf("got %d results, want 1 (normalized dedup: trailing slash, case, fragment)", len(sr.Results))
+	}
+}
+
 func TestMultiSearchPartialFailure(t *testing.T) {
 	engine1 := EngineConfig{
 		Name: "good",
