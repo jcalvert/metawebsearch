@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 )
 
 // normalizeURL lowercases scheme and host, strips trailing slashes, default
@@ -35,6 +36,12 @@ func normalizeURL(raw string) string {
 type MultiSearch struct {
 	Client  HTTPClient
 	Engines []EngineConfig
+
+	// EngineTimeout is the maximum time to wait for any single engine.
+	// If an engine exceeds this deadline (e.g. due to rate-limit retries),
+	// its context is canceled and results from faster engines are returned.
+	// Zero means 10 seconds.
+	EngineTimeout time.Duration
 }
 
 // Search runs all engines concurrently, deduplicates by URL, collects per-engine errors.
@@ -52,10 +59,17 @@ func (m *MultiSearch) Search(ctx context.Context, query string, opts SearchOpts)
 		outputs []engineResult
 	)
 
+	engineTimeout := m.EngineTimeout
+	if engineTimeout <= 0 {
+		engineTimeout = 10 * time.Second
+	}
+
 	for i, engine := range m.Engines {
 		wg.Add(1)
 		go func(eng EngineConfig, idx int) {
 			defer wg.Done()
+			engCtx, engCancel := context.WithTimeout(ctx, engineTimeout)
+			defer engCancel()
 			// Use per-engine client if the engine needs a specific TLS profile
 			client := m.Client
 			if eng.ClientProfile != "" {
@@ -70,7 +84,7 @@ func (m *MultiSearch) Search(ctx context.Context, query string, opts SearchOpts)
 				}
 				client = override
 			}
-			results, err := Execute(ctx, client, eng, query, opts)
+			results, err := Execute(engCtx, client, eng, query, opts)
 			mu.Lock()
 			outputs = append(outputs, engineResult{
 				name: eng.Name, results: results, err: err, order: idx,

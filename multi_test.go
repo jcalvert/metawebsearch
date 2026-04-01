@@ -4,8 +4,11 @@ package metawebsearch
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestMultiSearchConcurrentDispatch(t *testing.T) {
@@ -147,6 +150,73 @@ func TestMultiSearchPartialFailure(t *testing.T) {
 	}
 	if sr.Errors["good"] != nil {
 		t.Error("unexpected error for 'good' engine")
+	}
+}
+
+func TestMultiSearchEngineTimeout(t *testing.T) {
+	// A fast engine returns 200 immediately. A slow engine always returns 429,
+	// which would normally trigger retries for many seconds. The per-engine
+	// timeout should cancel the slow engine so it doesn't block the result.
+	fast := EngineConfig{
+		Name: "fast",
+		BuildRequest: func(q string, o SearchOpts) (*http.Request, error) {
+			return http.NewRequest("GET", "https://example.com/fast?q="+q, nil)
+		},
+		ParseResponse: func(resp *http.Response) ([]Result, error) {
+			return []Result{{Title: "Fast", URL: "https://fast.com"}}, nil
+		},
+	}
+	slow := EngineConfig{
+		Name:            "slow",
+		MinDelay:        time.Millisecond,
+		MaxRetries:      10, // would take very long without timeout
+		RetryableStatus: func(code int) bool { return code == 429 },
+		BuildRequest: func(q string, o SearchOpts) (*http.Request, error) {
+			return http.NewRequest("GET", "https://example.com/slow?q="+q, nil)
+		},
+		ParseResponse: func(resp *http.Response) ([]Result, error) {
+			return nil, nil
+		},
+	}
+
+	client := &fakeHTTPClient{
+		handler: func(req *http.Request) (*http.Response, error) {
+			if req.URL.Path == "/slow" {
+				return &http.Response{
+					StatusCode: 429,
+					Body:       io.NopCloser(strings.NewReader("")),
+					Header:     make(http.Header),
+				}, nil
+			}
+			return &http.Response{
+				StatusCode: 200,
+				Body:       io.NopCloser(strings.NewReader("")),
+				Header:     make(http.Header),
+			}, nil
+		},
+	}
+
+	ms := MultiSearch{
+		Client:        client,
+		Engines:       []EngineConfig{fast, slow},
+		EngineTimeout: 200 * time.Millisecond,
+	}
+
+	start := time.Now()
+	sr, err := ms.Search(context.Background(), "test", SearchOpts{})
+	elapsed := time.Since(start)
+
+	if err != nil {
+		t.Fatalf("Search error: %v", err)
+	}
+	if len(sr.Results) != 1 || sr.Results[0].Title != "Fast" {
+		t.Errorf("got results %v, want [Fast]", sr.Results)
+	}
+	if sr.Errors["slow"] == nil {
+		t.Error("expected timeout error for slow engine")
+	}
+	if elapsed > 2*time.Second {
+		t.Errorf("Search took %v, expected < 2s (per-engine timeout should cap it)", elapsed)
 	}
 }
 
